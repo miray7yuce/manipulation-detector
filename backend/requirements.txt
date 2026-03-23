@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+requests
+beautifulsoup4
+openai
+python-dotenv
+pydantic
+slowapi
+trafilatura
+langdetect
+google-generativeai

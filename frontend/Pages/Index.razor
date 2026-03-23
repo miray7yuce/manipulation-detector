@@ -1,0 +1,371 @@
+@page "/"
+@using System.Net.Http
+@using System.Net.Http.Json
+@using System.Text.Json
+@using System.Text.Json.Serialization
+@inject IHttpClientFactory HttpFactory
+
+<div class="analyzer-page">
+
+    <header class="masthead">
+        <div class="masthead-ticker">▪ MEDIA INTELLIGENCE ▪ BIAS DETECTION ▪ PRESS ANALYSIS ▪ FACT CHECK ▪</div>
+        <h1 class="masthead-title">News Article Analyzer</h1>
+        <p class="masthead-sub">Powered by AI · Detect bias, manipulation &amp; framing in seconds</p>
+    </header>
+
+    <main class="analyzer-form">
+
+        <div class="input-block">
+            <div class="input-block__label-row">
+                <span class="input-block__number">01</span>
+                <label for="newsText" class="input-block__label">Paste Article Text</label>
+            </div>
+            <textarea id="newsText"
+                      class="field field--textarea"
+                      placeholder="Paste the full news article text here..."
+                      @bind="textInput"></textarea>
+        </div>
+
+        <div class="input-divider">
+            <span class="input-divider__text">or</span>
+        </div>
+
+        <div class="input-block">
+            <div class="input-block__label-row">
+                <span class="input-block__number">02</span>
+                <label for="newsUrl" class="input-block__label">Article URL</label>
+            </div>
+            <input id="newsUrl"
+                   type="text"
+                   class="field field--url"
+                   placeholder="https://example.com/news/article"
+                   @bind="urlInput" />
+        </div>
+
+        <div class="form-actions">
+            <button class="btn-analyze" @onclick="AnalyzeNews" disabled="@loading">
+                @if (loading)
+                {
+                    <span class="btn-analyze__spinner"></span>
+                    <span>Analyzing…</span>
+                }
+                else
+                {
+                    <span class="btn-analyze__icon">⬡</span>
+                    <span>Run Analysis</span>
+                }
+            </button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(userMessage))
+        {
+            <div class="alert alert--error">
+                <span class="alert__icon">!</span>
+                <span class="alert__text">@userMessage</span>
+            </div>
+        }
+
+    </main>
+
+    @if (response != null)
+    {
+        <section class="results" aria-label="Analysis Results">
+
+            <!-- Header row: badge + meta pills -->
+            <div class="results__header">
+                <span class="results__badge">Analysis Report</span>
+                <div class="results__meta">
+                    @if (!string.IsNullOrEmpty(response.ProviderUsed))
+                    {
+                        <span class="meta-pill meta-pill--provider">⬡ @response.ProviderUsed</span>
+                    }
+                    @if (!string.IsNullOrEmpty(response.DetectedLanguage))
+                    {
+                        <span class="meta-pill meta-pill--lang">@response.DetectedLanguage.ToUpper()</span>
+                    }
+                    <span class="meta-pill meta-pill--time">@DateTime.Now.ToString("HH:mm")</span>
+                </div>
+            </div>
+
+            <!-- Truncation warning -->
+            @if (response.WasTruncated == true)
+            {
+                <div class="alert alert--warning">
+                    <span class="alert__icon alert__icon--warn">▲</span>
+                    <span class="alert__text">
+                        Article was too long and was truncated to 8,000 characters. Analysis is based on the first portion of the text.
+                    </span>
+                </div>
+            }
+
+            <!-- Source info bar -->
+            @if (response.SourceInfo != null)
+            {
+                <div class="source-bar">
+                    <div class="source-bar__left">
+                        <span class="source-bar__domain">@response.SourceInfo.Domain</span>
+                        <span class="source-bar__label">@response.SourceInfo.Label</span>
+                        <span class="source-bar__cred source-bar__cred--@response.SourceInfo.Credibility">
+                            @response.SourceInfo.Credibility credibility
+                        </span>
+                    </div>
+                    <div class="source-bar__spectrum">
+                        <span class="spectrum__pole spectrum__pole--left">Far Left</span>
+                        <div class="spectrum__track">
+                            <div class="spectrum__fill spectrum__fill--left"
+                                 style="width: @(Math.Max(0, 50 - response.SourceInfo.Score / 2))%"></div>
+                            <div class="spectrum__marker"
+                                 style="left: calc(@((response.SourceInfo.Score + 100) / 2.0)% - 7px)">
+                            </div>
+                            <div class="spectrum__fill spectrum__fill--right"
+                                 style="width: @(Math.Max(0, 50 + response.SourceInfo.Score / 2))%"></div>
+                        </div>
+                        <span class="spectrum__pole spectrum__pole--right">Far Right</span>
+                    </div>
+                </div>
+            }
+
+            <div class="results__grid">
+
+                <!-- Bias + Confidence -->
+                <div class="result-card result-card--bias">
+                    <div class="result-card__label">Detected Bias</div>
+                    <div class="result-card__value">
+                        @(string.IsNullOrWhiteSpace(response.Bias) ? "None Detected" : response.Bias)
+                    </div>
+                    @if (response.Confidence.HasValue)
+                    {
+                        <div class="confidence-bar">
+                            <div class="confidence-bar__header">
+                                <span class="confidence-bar__label">AI Confidence</span>
+                                <span class="confidence-bar__value">@response.Confidence%</span>
+                            </div>
+                            <div class="confidence-bar__track">
+                                <div class="confidence-bar__fill"
+                                     style="width: @response.Confidence%"
+                                     data-level="@GetConfidenceLevel(response.Confidence.Value)">
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Manipulation Techniques -->
+                <div class="result-card result-card--techniques">
+                    <div class="result-card__label">Manipulation Techniques</div>
+                    @if (response.ManipulationTechniques != null && response.ManipulationTechniques.Count > 0)
+                    {
+                        <ul class="technique-list">
+                            @foreach (var tech in response.ManipulationTechniques)
+                            {
+                                <li class="technique-list__item">@tech</li>
+                            }
+                        </ul>
+                    }
+                    else
+                    {
+                        <span class="result-card__empty">No manipulation detected</span>
+                    }
+                </div>
+
+                <!-- Highlights -->
+                <div class="result-card result-card--highlights">
+                    <div class="result-card__label">Key Phrases &amp; Highlights</div>
+                    @if (response.Highlights != null && response.Highlights.Count > 0)
+                    {
+                        @if (!string.IsNullOrWhiteSpace(textInput))
+                        {
+                            <div class="highlight-text">
+                                @((MarkupString)HighlightWords(textInput, response.Highlights))
+                            </div>
+                        }
+                        else
+                        {
+                            <ul class="highlight-list">
+                                @foreach (var h in response.Highlights)
+                                {
+                                    <li class="highlight-list__item">@h</li>
+                                }
+                            </ul>
+                        }
+                    }
+                    else
+                    {
+                        <span class="result-card__empty">No highlights found</span>
+                    }
+                </div>
+
+            </div>
+
+            <!-- Explanation -->
+            <div class="explanation-block">
+                <div class="explanation-block__header">
+                    <span class="explanation-block__icon">◈</span>
+                    <span class="explanation-block__title">Full Explanation</span>
+                </div>
+                <p class="explanation-block__body">
+                    @(string.IsNullOrWhiteSpace(response.Explanation) ? "No explanation available." : response.Explanation)
+                </p>
+            </div>
+
+        </section>
+    }
+
+</div>
+
+@code {
+    private string? textInput;
+    private string? urlInput;
+    private AnalyzeNewsResponse? response;
+    private bool loading = false;
+    private string? userMessage;
+
+    private async Task AnalyzeNews()
+    {
+        loading = true;
+        response = null;
+        userMessage = null;
+
+        if (string.IsNullOrWhiteSpace(textInput) && string.IsNullOrWhiteSpace(urlInput))
+        {
+            userMessage = "Please provide either some news text or a news article URL before analyzing.";
+            loading = false;
+            return;
+        }
+
+        var request = new { text = textInput, url = urlInput };
+
+        try
+        {
+            var apiClient = HttpFactory.CreateClient("Api");
+            var resp = await apiClient.PostAsJsonAsync("analyze-news", request);
+            if (resp.IsSuccessStatusCode)
+            {
+                var result = await resp.Content.ReadFromJsonAsync<AnalyzeNewsResponse>();
+                if (result == null || (
+                        string.IsNullOrWhiteSpace(result.Bias) &&
+                        (result.ManipulationTechniques == null || result.ManipulationTechniques.Count == 0) &&
+                        (result.Highlights == null || result.Highlights.Count == 0) &&
+                        string.IsNullOrWhiteSpace(result.Explanation)
+                    ))
+                {
+                    userMessage = "Couldn't analyze the article. Please try with different content or check your input.";
+                    response = null;
+                }
+                else
+                {
+                    response = result;
+                }
+            }
+            else
+            {
+                var msg = await resp.Content.ReadAsStringAsync();
+                userMessage = "Sorry, something went wrong: " + ExtractErrorMessage(msg, resp.StatusCode);
+            }
+        }
+        catch (Exception ex)
+        {
+            var msg = ex.Message;
+            if (msg.Contains("Connection refused") || msg.Contains("Failed to fetch") || msg.Contains("ERR_CONNECTION_REFUSED"))
+                msg = "Cannot connect to the backend. Make sure the API server is running.";
+            userMessage = "An error occurred: " + msg;
+        }
+        loading = false;
+    }
+
+    private static string GetConfidenceLevel(int confidence) =>
+        confidence >= 75 ? "high" : confidence >= 45 ? "mid" : "low";
+
+    public class SourceInfoDto
+    {
+        [JsonPropertyName("domain")]      public string? Domain      { get; set; }
+        [JsonPropertyName("score")]       public int     Score       { get; set; }
+        [JsonPropertyName("label")]       public string? Label       { get; set; }
+        [JsonPropertyName("credibility")] public string? Credibility { get; set; }
+    }
+
+    public class AnalyzeNewsResponse
+    {
+        [JsonPropertyName("bias")]
+        public string? Bias { get; set; }
+
+        [JsonPropertyName("manipulation_techniques")]
+        public List<string>? ManipulationTechniques { get; set; }
+
+        [JsonPropertyName("highlights")]
+        public List<string>? Highlights { get; set; }
+
+        [JsonPropertyName("confidence")]
+        public int? Confidence { get; set; }
+
+        [JsonPropertyName("explanation")]
+        public string? Explanation { get; set; }
+
+        [JsonPropertyName("provider_used")]
+        public string? ProviderUsed { get; set; }
+
+        [JsonPropertyName("detected_language")]
+        public string? DetectedLanguage { get; set; }
+
+        [JsonPropertyName("was_truncated")]
+        public bool? WasTruncated { get; set; }
+
+        [JsonPropertyName("source_info")]
+        public SourceInfoDto? SourceInfo { get; set; }
+    }
+
+    private static string ExtractErrorMessage(string responseBody, System.Net.HttpStatusCode statusCode)
+    {
+        if (string.IsNullOrWhiteSpace(responseBody))
+            return $"Backend returned {(int)statusCode}.";
+        try
+        {
+            var doc = System.Text.Json.JsonDocument.Parse(responseBody);
+            if (doc.RootElement.TryGetProperty("detail", out var detailProp))
+            {
+                if (detailProp.ValueKind == System.Text.Json.JsonValueKind.String)
+                    return detailProp.GetString() ?? responseBody;
+                if (detailProp.ValueKind == System.Text.Json.JsonValueKind.Array && detailProp.GetArrayLength() > 0)
+                {
+                    var first = detailProp[0];
+                    if (first.TryGetProperty("msg", out var msgProp))
+                        return msgProp.GetString() ?? responseBody;
+                }
+                return detailProp.GetRawText();
+            }
+        }
+        catch { }
+        return responseBody.Length > 200 ? responseBody[..200] + "..." : responseBody;
+    }
+
+    private string HighlightWords(string input, List<string> highlights)
+    {
+        if (string.IsNullOrWhiteSpace(input) || highlights == null || highlights.Count == 0)
+            return System.Net.WebUtility.HtmlEncode(input);
+
+        var ordered = highlights
+            .Where(h => !string.IsNullOrWhiteSpace(h))
+            .OrderByDescending(h => h.Length)
+            .Distinct()
+            .ToList();
+
+        string encodedInput = System.Net.WebUtility.HtmlEncode(input);
+
+        foreach (var phrase in ordered)
+        {
+            if (string.IsNullOrWhiteSpace(phrase)) continue;
+            string safePhrase = System.Net.WebUtility.HtmlEncode(phrase);
+            string pattern = System.Text.RegularExpressions.Regex.Escape(safePhrase);
+            if (!phrase.Any(char.IsWhiteSpace))
+                pattern = $@"\b{pattern}\b";
+
+            encodedInput = System.Text.RegularExpressions.Regex.Replace(
+                encodedInput,
+                pattern,
+                m => $"<mark class=\"highlight-mark\">{m.Value}</mark>",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase
+            );
+        }
+        return encodedInput;
+    }
+}
