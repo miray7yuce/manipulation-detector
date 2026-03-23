@@ -1,0 +1,4 @@
+C:\Users\miray\Desktop\manipulation_detector\frontend\publish\wwwroot\index.html
+C:\Users\miray\Desktop\manipulation_detector\frontend\publish\frontend.runtimeconfig.json
+C:\Users\miray\Desktop\manipulation_detector\frontend\publish\dotnet.js
+C:\Users\miray\Desktop\manipulation_detector\frontend\publish\web.config
